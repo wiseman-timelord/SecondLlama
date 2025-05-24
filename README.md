@@ -5,7 +5,7 @@ Description:
 Its secondlife, its llama, its time!!...Testing Jules, I intend to make the complete program with Jules, with, a lot of decisions and some editing, by me, and some back and forth with deepseek/grok with notepad++. Dunno what will happen or if its even possible, we will see.
 
 Development:
-Here is the original prompt...
+- Here is the original prompt...
 ```
 To create a program, that uses the llama 3.x models, in gguf and that feature image recognition, to be able to identify and read the chat log in a SecondLife window, and given configuration of the username...
 
@@ -19,4 +19,10 @@ To create a program, that uses the llama 3.x models, in gguf and that feature im
     so, mouse/keyboard input will be important too.
 
 Platform: Windows 10 non-wsl with python 3.12+ Hardware AMD GPU 8GB rx 470 (NON-ROCM).
+```
+- here are some other bits of information...
+```
+- downloads should be to .\temp, while the extracted files should be in .\data\llama-box\avx2 and .\data\llama-box\vulkan.
+- dont install llama-cpp-python, unless we need it, or can use it to enable the program to detect settings, that will then be used in llama-box, or possibly we should use gguf (library) for such purposes, I think that would be better given the context, but only if we need it for something.
+- lets make it configurable, so that the user can switch processing method, because, even though it may fit it, it may not leave enough gpu ram, and then secondlife may have issues. a choice between the hardware I potentially will use, we have 2 pre-compiled binaries to include, `https://github.com/gpustack/llama-box/releases/download/v0.0.147/llama-box-windows-amd64-avx2.zip`, `https://github.com/gpustack/llama-box/releases/download/v0.0.147/llama-box-windows-amd64-vulkan-1.4.zip`.
 ```
