@@ -1,4 +1,4 @@
-# Script: ./scripts/interface.py - Manages Second Life interface interactions (OCR, GUI automation).
+# Script: ./scripts/interface.py - Manages the application's command-line interface, menus, and text feedback.
 
 if __name__ == '__main__':
-    print("This is the interface script. It will handle OCR and GUI automation for Second Life.")
+    print("This is the application interface script. It will handle CLI menus and text feedback.")

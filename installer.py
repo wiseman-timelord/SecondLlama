@@ -14,7 +14,7 @@ LLAMA_BOX_DIR = os.path.join(DATA_DIR, "llama-box")
 LLAMA_BOX_AVX2_DIR = os.path.join(LLAMA_BOX_DIR, "avx2")
 LLAMA_BOX_VULKAN_DIR = os.path.join(LLAMA_BOX_DIR, "vulkan")
 SCRIPTS_DIR = "./scripts"
-CONFIG_FILE_PATH = os.path.join(DATA_DIR, "config.json")
+CONFIG_FILE_PATH = os.path.join(DATA_DIR, "persistent.json") # Changed filename
 
 DEFAULT_CONFIG = {
     "username": "User",
@@ -92,10 +92,10 @@ def setup_directories():
     print("Directory setup complete.")
 
 def create_config_file():
-    """Creates the default JSON configuration file if it doesn't exist."""
-    print("\n--- Creating configuration file ---")
+    """Creates the default JSON persistent configuration file if it doesn't exist."""
+    print("\n--- Creating persistent configuration file ---")
     if os.path.exists(CONFIG_FILE_PATH):
-        print(f"Configuration file already exists at: {os.path.abspath(CONFIG_FILE_PATH)}")
+        print(f"Persistent configuration file already exists at: {os.path.abspath(CONFIG_FILE_PATH)}")
         print("Skipping creation to avoid overwriting existing settings.")
     else:
         try:
@@ -107,10 +107,10 @@ def create_config_file():
             
             with open(CONFIG_FILE_PATH, 'w') as f:
                 json.dump(config_to_write, f, indent=2)
-            print(f"Default configuration file created at: {os.path.abspath(CONFIG_FILE_PATH)}")
+            print(f"Default persistent configuration file created at: {os.path.abspath(CONFIG_FILE_PATH)}")
         except IOError as e:
-            print(f"ERROR: Could not create configuration file {CONFIG_FILE_PATH}: {e}")
-    print("Configuration file setup complete.")
+            print(f"ERROR: Could not create persistent configuration file {CONFIG_FILE_PATH}: {e}")
+    print("Persistent configuration file setup complete.")
 
 
 def install_dependencies():
@@ -245,19 +245,19 @@ def download_and_extract_llama_box():
 
 
 def download_llm_model():
-    """Downloads the LLM model specified in the config file."""
+    """Downloads the LLM model specified in the persistent configuration file."""
     print("\n--- Downloading LLM Model ---")
     
     if not os.path.exists(CONFIG_FILE_PATH):
-        print(f"ERROR: Configuration file not found at {CONFIG_FILE_PATH}. Cannot determine which model to download.")
-        print("Please run the configuration file creation step first.")
+        print(f"ERROR: Persistent configuration file not found at {CONFIG_FILE_PATH}. Cannot determine which model to download.")
+        print("Please run the persistent configuration file creation step first.")
         return False
 
     try:
         with open(CONFIG_FILE_PATH, 'r') as f:
             config = json.load(f)
     except Exception as e:
-        print(f"ERROR: Could not read or parse config file {CONFIG_FILE_PATH}: {e}")
+        print(f"ERROR: Could not read or parse persistent configuration file {CONFIG_FILE_PATH}: {e}")
         return False
 
     repo_id = config.get("llm_model_repo_id")
@@ -275,8 +275,8 @@ def download_llm_model():
         print(f"Model file '{filename}' already exists at: {os.path.abspath(expected_local_model_path)}")
         # Verify if the path in config matches the actual location
         if os.path.abspath(model_path_config) != os.path.abspath(expected_local_model_path):
-            print(f"Warning: Model path in config ('{model_path_config}') does not match expected path ('{expected_local_model_path}').")
-            print(f"Consider updating config.json if '{expected_local_model_path}' is the correct location.")
+            print(f"Warning: Model path in persistent config ('{model_path_config}') does not match expected path ('{expected_local_model_path}').")
+            print(f"Consider updating persistent.json if '{expected_local_model_path}' is the correct location.")
         print("Skipping download.")
         return True # Model exists
 
@@ -301,9 +301,9 @@ def download_llm_model():
             try:
                 with open(CONFIG_FILE_PATH, 'w') as f:
                     json.dump(config, f, indent=2)
-                print(f"Configuration file updated with model path: {normalized_downloaded_path}")
+                print(f"Persistent configuration file updated with model path: {normalized_downloaded_path}")
             except IOError as e:
-                print(f"Warning: Could not update config file with new model path: {e}")
+                print(f"Warning: Could not update persistent configuration file with new model path: {e}")
         return True
     except ImportError:
         print("ERROR: huggingface-hub library is not installed. This should have been installed in the previous step.")
