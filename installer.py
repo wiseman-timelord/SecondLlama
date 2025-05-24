@@ -2,25 +2,41 @@ import os
 import sys
 import subprocess
 import json
+import urllib.request
+import zipfile
 
 # --- Configuration ---
 VENV_DIR = "./venv"
+TEMP_DIR = "./temp" # For downloads
 DATA_DIR = "./data"
 MODELS_DIR = os.path.join(DATA_DIR, "models")
+LLAMA_BOX_DIR = os.path.join(DATA_DIR, "llama-box")
+LLAMA_BOX_AVX2_DIR = os.path.join(LLAMA_BOX_DIR, "avx2")
+LLAMA_BOX_VULKAN_DIR = os.path.join(LLAMA_BOX_DIR, "vulkan")
 SCRIPTS_DIR = "./scripts"
 CONFIG_FILE_PATH = os.path.join(DATA_DIR, "config.json")
 
 DEFAULT_CONFIG = {
     "username": "User",
-    "llm_model_repo_id": "Qwen/Qwen2-0.5B-Instruct-GGUF",
-    "llm_model_filename": "qwen2-0.5b-instruct-q4_0.gguf",
-    "llm_model_path": os.path.join(MODELS_DIR, "qwen2-0.5b-instruct-q4_0.gguf").replace("\\", "/"), # Ensure forward slashes
-    "vulkan_offload": True,
+    "llm_engine": "llama-box", # New
+    "llm_processing_method": "vulkan", # New: 'vulkan' or 'cpu'
+    "llama_box_vulkan_path": os.path.join(LLAMA_BOX_VULKAN_DIR, "llama-box.exe").replace("\\", "/"), # New
+    "llama_box_cpu_path": os.path.join(LLAMA_BOX_AVX2_DIR, "llama-box.exe").replace("\\", "/"), # New
+    "llm_model_repo_id": "Qwen/Qwen2-0.5B-Instruct-GGUF", # For GGUF model download
+    "llm_model_filename": "qwen2-0.5b-instruct-q4_0.gguf", # For GGUF model download
+    "llm_model_path": os.path.join(MODELS_DIR, "qwen2-0.5b-instruct-q4_0.gguf").replace("\\", "/"),
     "ocr_language": "eng",
     "log_level": "INFO"
+    # "vulkan_offload": True, # Removed, covered by llm_processing_method and specific paths
 }
 
 CORE_DEPENDENCIES = ["huggingface-hub", "Pillow", "pytesseract", "pyautogui"]
+
+# llama-box URLs
+LLAMA_BOX_AVX2_URL = "https://github.com/gpustack/llama-box/releases/download/v0.0.147/llama-box-windows-amd64-avx2.zip"
+LLAMA_BOX_VULKAN_URL = "https://github.com/gpustack/llama-box/releases/download/v0.0.147/llama-box-windows-amd64-vulkan-1.4.zip"
+LLAMA_BOX_AVX2_ZIP_NAME = "llama_box_avx2.zip"
+LLAMA_BOX_VULKAN_ZIP_NAME = "llama_box_vulkan.zip"
 
 # --- Helper Functions ---
 def get_venv_python_executable():
@@ -53,7 +69,16 @@ def run_subprocess(command, error_message):
 def setup_directories():
     """Creates necessary project directories if they don't exist."""
     print("\n--- Setting up directories ---")
-    dirs_to_create = [DATA_DIR, MODELS_DIR, SCRIPTS_DIR, VENV_DIR]
+    dirs_to_create = [
+        TEMP_DIR, 
+        DATA_DIR, 
+        MODELS_DIR, 
+        LLAMA_BOX_DIR, 
+        LLAMA_BOX_AVX2_DIR, 
+        LLAMA_BOX_VULKAN_DIR, 
+        SCRIPTS_DIR, 
+        VENV_DIR
+    ]
     for dir_path in dirs_to_create:
         if not os.path.exists(dir_path):
             try:
@@ -74,13 +99,14 @@ def create_config_file():
         print("Skipping creation to avoid overwriting existing settings.")
     else:
         try:
-            # Ensure model path in default config uses correct separators for the current OS
-            # and then replace with forward slashes for consistency in the JSON.
-            default_model_path = os.path.join(MODELS_DIR, DEFAULT_CONFIG["llm_model_filename"])
-            DEFAULT_CONFIG["llm_model_path"] = default_model_path.replace("\\", "/")
-
+            # Ensure all paths in default config use forward slashes
+            config_to_write = DEFAULT_CONFIG.copy()
+            config_to_write["llama_box_vulkan_path"] = os.path.join(LLAMA_BOX_VULKAN_DIR, "llama-box.exe").replace("\\", "/")
+            config_to_write["llama_box_cpu_path"] = os.path.join(LLAMA_BOX_AVX2_DIR, "llama-box.exe").replace("\\", "/")
+            config_to_write["llm_model_path"] = os.path.join(MODELS_DIR, config_to_write["llm_model_filename"]).replace("\\", "/")
+            
             with open(CONFIG_FILE_PATH, 'w') as f:
-                json.dump(DEFAULT_CONFIG, f, indent=2)
+                json.dump(config_to_write, f, indent=2)
             print(f"Default configuration file created at: {os.path.abspath(CONFIG_FILE_PATH)}")
         except IOError as e:
             print(f"ERROR: Could not create configuration file {CONFIG_FILE_PATH}: {e}")
@@ -94,12 +120,12 @@ def install_dependencies():
     # 1. Prerequisites Information
     print("\n** Prerequisites **")
     print("- Python 3.12+ (You are running this script, so Python is present)")
-    print("- C++ Compiler: Ensure you have a C++ compiler installed.")
-    print("  - Windows: Visual Studio Community Edition with 'Desktop development with C++' workload.")
-    print("             (Ensure cl.exe is in your PATH, e.g., by running from a VS Developer Command Prompt).")
-    print("  - Windows (Alternative): MinGW-w64 (ensure g++/gcc are in PATH).")
+    # C++ Compiler prerequisite removed as llama-cpp-python is no longer installed by default.
     print("- Tesseract OCR: Please ensure Tesseract OCR is installed and its installation directory (containing tesseract.exe) is in your system's PATH.")
     print("  Download from: https://github.com/UB-Mannheim/tesseract/wiki")
+    print("- Vulkan SDK (Optional, for llama-box Vulkan): If you plan to use llama-box with Vulkan, ensure the Vulkan SDK is installed and your graphics drivers are up to date.")
+    print("  Vulkan SDK: https://vulkan.lunarg.com/sdk/home")
+
 
     # 2. Virtual Environment Setup
     print("\n** Virtual Environment Setup **")
@@ -129,38 +155,94 @@ def install_dependencies():
             print(f"Warning: Could not install {package}. Some features may not work.")
             # Decide if this is fatal or allow continuation
     
-    # 4. llama-cpp-python Installation
-    print("\n** Installing llama-cpp-python **")
-    print("llama-cpp-python requires compilation and can be built for CPU or GPU.")
-    print("This script will attempt a CPU-only installation by default for broader compatibility.")
+    # llama-cpp-python installation removed. llama-box is a pre-compiled executable.
 
-    print("\n--- Option 1: CPU Default (Attempting this now) ---")
-    print("Installing llama-cpp-python (CPU version)...")
-    if not run_subprocess([venv_python_exe, "-m", "pip", "install", "llama-cpp-python"], "Failed to install llama-cpp-python (CPU)."):
-        print("ERROR: llama-cpp-python (CPU) installation failed.")
-        print("Common issues: Missing C++ compiler, outdated pip/setuptools, or network problems.")
-        print("Please ensure a C++ compiler is installed and in your PATH (see prerequisites).")
-        print("You can try running 'pip install --upgrade pip setuptools' in your venv first, then retry.")
-    else:
-        print("llama-cpp-python (CPU) installed successfully into the virtual environment.")
-
-    print("\n--- Option 2: Vulkan GPU Accelerated (Manual Steps for AMD/Intel GPUs) ---")
-    print("If you have an AMD or modern Intel GPU and want Vulkan support (recommended for better performance):")
-    print("1. Ensure your Vulkan drivers and SDK are installed and up to date (https://vulkan.lunarg.com/sdk/home).")
-    print("2. After this script finishes, activate the virtual environment manually:")
-    print(f"   - On Windows CMD: .\\{VENV_DIR}\\Scripts\\activate.bat")
-    print(f"   - On PowerShell:  .\\{VENV_DIR}\\Scripts\\Activate.ps1")
-    print("3. Then, in the activated environment, run the following commands:")
-    print("   For PowerShell:")
-    print('     $env:CMAKE_ARGS = "-DGGML_VULKAN=on"')
-    print(f"     {os.path.basename(venv_python_exe)} -m pip install --upgrade --force-reinstall --no-cache-dir llama-cpp-python")
-    print("   Alternatively, for Command Prompt (cmd.exe):")
-    print('     set CMAKE_ARGS=-DGGML_VULKAN=on')
-    print(f"     {os.path.basename(venv_python_exe)} -m pip install --upgrade --force-reinstall --no-cache-dir llama-cpp-python")
-    print("   (You might need to uninstall the CPU version first: pip uninstall llama-cpp-python)")
-
-    print("\nDependency installation phase complete.")
+    print("\nCore Python dependency installation phase complete.")
     return True # Indicate success
+
+def download_and_extract_llama_box():
+    """Downloads and extracts llama-box.exe for AVX2 and Vulkan."""
+    print("\n--- Downloading and Extracting llama-box ---")
+
+    files_to_download = [
+        {"url": LLAMA_BOX_AVX2_URL, "zip_name": LLAMA_BOX_AVX2_ZIP_NAME, "extract_dir": LLAMA_BOX_AVX2_DIR, "exe_name": "llama-box.exe", "desc": "AVX2 (CPU)"},
+        {"url": LLAMA_BOX_VULKAN_URL, "zip_name": LLAMA_BOX_VULKAN_ZIP_NAME, "extract_dir": LLAMA_BOX_VULKAN_DIR, "exe_name": "llama-box.exe", "desc": "Vulkan (GPU)"}
+    ]
+
+    for item in files_to_download:
+        url = item["url"]
+        zip_name = item["zip_name"]
+        extract_dir = item["extract_dir"]
+        exe_name = item["exe_name"]
+        desc = item["desc"]
+        
+        zip_path = os.path.join(TEMP_DIR, zip_name)
+        exe_path = os.path.join(extract_dir, exe_name)
+
+        print(f"\nChecking for llama-box ({desc}) at {os.path.abspath(exe_path)}...")
+        if os.path.exists(exe_path):
+            print(f"llama-box.exe for {desc} already exists. Skipping download and extraction.")
+            continue
+
+        # Download
+        print(f"Downloading {desc} version from {url} to {os.path.abspath(zip_path)}...")
+        try:
+            # Create User-Agent to avoid potential blocking
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+                data = response.read() # Read all data from response
+                out_file.write(data)
+            print(f"Successfully downloaded {zip_name}.")
+        except urllib.error.URLError as e:
+            print(f"ERROR: Failed to download {zip_name}: {e.reason}")
+            print("Please check your internet connection and the URL. Skipping this version.")
+            continue
+        except Exception as e:
+            print(f"ERROR: An unexpected error occurred during download of {zip_name}: {e}")
+            continue
+            
+        # Extraction
+        print(f"Extracting {exe_name} from {os.path.abspath(zip_path)} to {os.path.abspath(extract_dir)}...")
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                # Check if exe_name is in the zip file before extracting
+                if exe_name not in zip_ref.namelist():
+                    print(f"ERROR: '{exe_name}' not found in '{zip_name}'. Archive contents: {zip_ref.namelist()}")
+                    # Attempt to find any .exe if the name is different (simple heuristic)
+                    found_exe = None
+                    for name_in_zip in zip_ref.namelist():
+                        if name_in_zip.lower().endswith(".exe"):
+                            found_exe = name_in_zip
+                            print(f"Found alternative EXE: '{found_exe}'. Attempting to extract it as '{exe_name}'.")
+                            break
+                    if found_exe:
+                        zip_ref.extract(found_exe, extract_dir)
+                        # Rename it to the expected exe_name if different
+                        if found_exe != exe_name:
+                            os.rename(os.path.join(extract_dir, found_exe), exe_path)
+                        print(f"Successfully extracted '{found_exe}' as '{exe_name}' to {extract_dir}.")
+                    else:
+                        print(f"No suitable .exe found in {zip_name}. Skipping extraction for {desc}.")
+                        continue
+                else: # Expected exe_name is found
+                    zip_ref.extract(exe_name, extract_dir)
+                    print(f"Successfully extracted {exe_name} to {extract_dir}.")
+
+            # Optional: Delete the zip file after successful extraction
+            # print(f"Deleting temporary file {zip_path}...")
+            # os.remove(zip_path)
+
+        except zipfile.BadZipFile:
+            print(f"ERROR: Failed to open zip file '{zip_name}'. It might be corrupted or not a zip file.")
+        except FileNotFoundError:
+            print(f"ERROR: Zip file '{zip_name}' not found for extraction. Download may have failed.")
+        except Exception as e:
+            print(f"ERROR: An unexpected error occurred during extraction of {zip_name}: {e}")
+
+    print("\nlama-box download and extraction phase complete.")
+    return True
+
 
 def download_llm_model():
     """Downloads the LLM model specified in the config file."""
@@ -241,28 +323,29 @@ def main():
     print(f"Current working directory: {os.getcwd()}")
 
     setup_directories()
-    create_config_file() # Creates config with default model path
+    create_config_file() 
 
-    # Install dependencies including huggingface_hub
     if not install_dependencies():
-        print("\nDependency installation failed. Some parts of the setup might be incomplete.")
+        print("\nCore Python dependency installation failed. Some parts of the setup might be incomplete.")
         print("Please review the error messages above and try to resolve them.")
-        # Optionally, exit here if core dependencies are critical
-        # return
+        # Not returning, as user might want to proceed with llama-box and model download
 
-    # Download model (uses config created/verified earlier)
-    if not download_llm_model():
-        print("\nLLM Model download failed or was skipped due to issues.")
-        print("The application might not function correctly without the model.")
+    if not download_and_extract_llama_box():
+        print("\nlama-box download or extraction failed for one or more versions.")
+        print("The LLM engine might not be available.")
+
+    if not download_llm_model(): # For GGUF models
+        print("\nLLM GGUF Model download failed or was skipped due to issues.")
+        print("The application might not function correctly without the GGUF model for llama-box.")
     
     print("\n--- Installation Complete ---")
     print("Next steps:")
     print("1. If you encountered errors, please review the messages above.")
-    print("2. If you want GPU (Vulkan) acceleration for the LLM, follow the manual steps printed during the dependency installation for llama-cpp-python.")
-    print(f"3. Ensure Tesseract OCR is installed and its directory is in your system PATH (mentioned in prerequisites).")
+    print(f"2. Ensure Tesseract OCR is installed and its directory is in your system PATH (mentioned in prerequisites).")
+    print(f"3. If using llama-box with Vulkan, ensure Vulkan SDK is installed and drivers are up-to-date.")
     print(f"4. You can now try running the main application, for example, using a launcher script like 'SecondLlama.bat' (if available),")
     print(f"   which should handle activating the virtual environment ({os.path.abspath(VENV_DIR)}).")
-    print(f"   Or, activate manually: cd .\\{VENV_DIR}\\Scripts && activate && cd ..\\.. && python your_main_script.py")
+    print(f"   Or, activate manually: cd .\\{VENV_DIR}\\Scripts && activate && cd ..\\.. && python your_main_script.py") # Adjust for your main script
 
 if __name__ == "__main__":
     main()
