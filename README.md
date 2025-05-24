@@ -42,6 +42,8 @@ Here is how the files are organised...
 .\scripts\interface.py  (program interface (text))
 .\scripts\models.py  (llama-box and model handling)
 .\scripts\prompts.py  (LLM Prompt Management)
+.\scripts\controller.py  (control of SecondLife Viewer navigation/typing)
+.\scripts\detection.py  (detection of screen-elements text/avatars/3dspace)
 .\scripts\temporary.py  (runtime state management)
 .\scripts\utilities.py  (common helper function)
 ```
